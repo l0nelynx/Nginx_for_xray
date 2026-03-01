@@ -1,4 +1,7 @@
 # All In One X-ray configuration with Nginx
+--443-->Nginx-->[X-ray(TCP), Reality-fake, Panel, etc (HTTP)]
+ - Reality fake site in sub.domain.com with selfsigned cert
+ - Using multiple subdomains to forward TCP traffic to different sockets for X-ray
 Quick start:
 1. Add volume to your docker-compose.yml of x-ray node:
 ```yaml
@@ -52,4 +55,20 @@ bash <(curl -sSL https://raw.githubusercontent.com/l0nelynx/Nginx_for_xray/refs/
           ]
         }
       }
+```
+4* /etc/sysctl.conf
+```conf
+...
+net.core.wmem_max=16777216
+net.core.rmem_max=16777216
+net.ipv4.tcp_syncookies = 0
+net.core.default_qdisc = fq
+net.ipv4.tcp_congestion_control = bbr
+fs.file-max = 2097152
+net.ipv4.tcp_rmem = 4096 87380 16777216
+net.ipv4.tcp_wmem = 4096 65536 16777216
+net.ipv4.tcp_fastopen = 3
+```
+```bash
+sudo sysctl -p
 ```
