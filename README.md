@@ -14,7 +14,7 @@ bash <(curl -sSL https://raw.githubusercontent.com/l0nelynx/Nginx_for_xray/refs/
 ```json
 {
       "tag": "VLESS_TCP_REALITY_NGINX",
-      "listen": "/dev/shm/tcp_01.socket,0666", //Or tcp_XX.socket, where XX in 01 to SUB_NUM
+      "listen": "/dev/shm/tcp_01.socket,0666", //Or tcp_XX.socket, where XX in 01 to SUB_COUNT
       "protocol": "vless",
       "settings": {
         "clients": [],
