@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ViewTube - Смотрите видео онлайн</title>
+    <style>
+        :root {
+            --bg-color: #0f0f0f;
+            --card-bg: #272727;
+            --text-main: #ffffff;
+            --text-dim: #aaaaaa;
+            --accent: #3ea6ff;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: "Roboto", Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            overflow: hidden; /* Запрещаем скролл для эффекта заглушки */
+        }
+
+        /* Фоновая сетка видео (заблюрена) */
+        .video-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 16px;
+            padding: 80px 24px;
+            filter: blur(8px) brightness(0.4);
+            pointer-events: none;
+            user-select: none;
+        }
+
+        .video-card {
+            background: transparent;
+        }
+
+        .thumbnail {
+            width: 100%;
+            aspect-ratio: 16/9;
+            background-color: var(--card-bg);
+            border-radius: 12px;
+            margin-bottom: 12px;
+        }
+
+        .video-info {
+            display: flex;
+            gap: 12px;
+        }
+
+        .avatar {
+            width: 36px;
+            height: 36px;
+            background-color: var(--card-bg);
+            border-radius: 50%;
+        }
+
+        .lines div {
+            height: 12px;
+            background-color: var(--card-bg);
+            border-radius: 4px;
+            margin-bottom: 6px;
+        }
+
+        /* Шапка сайта */
+        header {
+            position: fixed;
+            top: 0;
+            width: 100%;
+            height: 56px;
+            background: var(--bg-color);
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            z-index: 10;
+        }
+
+        .logo {
+            font-weight: bold;
+            font-size: 20px;
+            letter-spacing: -1px;
+            display: flex;
+            align-items: center;
+        }
+
+        .logo span {
+            background: red;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 4px;
+            margin-right: 4px;
+        }
+
+        /* Форма входа */
+        .overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 100;
+        }
+
+        .login-box {
+            background: #1e1e1e;
+            padding: 40px;
+            border-radius: 16px;
+            width: 100%;
+            max-width: 380px;
+            text-align: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            border: 1px solid #333;
+        }
+
+        h2 { margin-top: 0; font-size: 24px; }
+        p { color: var(--text-dim); font-size: 14px; margin-bottom: 24px; }
+
+        input {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 16px;
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 8px;
+            color: white;
+            box-sizing: border-box;
+        }
+
+        button {
+            width: 100%;
+            padding: 12px;
+            background-color: var(--accent);
+            color: #000;
+            border: none;
+            border-radius: 20px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 10px;
+        }
+
+        button:hover { opacity: 0.9; }
+
+        .footer-links {
+            margin-top: 20px;
+            font-size: 12px;
+            color: var(--accent);
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div class="logo"><span>▶</span> ViewTube</div>
+    </header>
+
+    <!-- Сетка-заглушка -->
+    <div class="video-grid">
+        <!-- Генерируем 12 карточек -->
+        <script>
+            for(let i=0; i<12; i++) {
+                document.write(`
+                    <div class="video-card">
+                        <div class="thumbnail"></div>
+                        <div class="video-info">
+                            <div class="avatar"></div>
+                            <div class="lines">
+                                <div style="width: 180px;"></div>
+                                <div style="width: 120px;"></div>
+                            </div>
+                        </div>
+                    </div>
+                `);
+            }
+        </script>
+    </div>
+
+    <!-- Окно входа -->
+    <div class="overlay">
+        <div class="login-box">
+            <h2>Войти</h2>
+            <p>Чтобы просмотреть это видео и получить доступ ко всему контенту, необходимо войти в аккаунт.</p>
+            <form>
+                <input type="text" placeholder="Введите адрес электронной почты" required>
+                <input type="password" placeholder="Введите пароль" required>
+                <button type="submit">Далее</button>
+            </form>
+            <div class="footer-links">Создать аккаунт</div>
+        </div>
+    </div>
+
+</body>
+</html>
