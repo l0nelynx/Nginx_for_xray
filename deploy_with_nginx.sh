@@ -3,103 +3,142 @@
 # Останавливаем выполнение при ошибках
 set -e
 
-echo "--- 1. Получение исходного кода из GitHub ---"
-REPO_URL="https://github.com/l0nelynx/Nginx_for_xray.git"
+# --- 1. Получение исходного кода ---
+echo "--- 1. Синхронизация с GitHub ---"
 TARGET_DIR="/opt/nginx"
+REPO_URL="https://github.com/l0nelynx/Nginx_for_xray.git"
 
-if [ ! -d "$TARGET_DIR" ]; then
-    mkdir -p "$TARGET_DIR"
-    touch "$TARGET_DIR/.env"
-fi
-
+mkdir -p "$TARGET_DIR"
+touch "$TARGET_DIR/.env"
 cd "$TARGET_DIR"
+
 if [ ! -d ".git" ]; then
     git init
     git remote add origin "$REPO_URL"
 fi
-git pull origin main
+git fetch origin
+git reset --hard origin/main # Жестко синхронизируем состояние с репозиторием
 
-echo "--- 2. Определение доменов и субдоменов ---"
-read -p "Введите основной домен (например, domain.com): " MAIN_DOMAIN
-read -p "Введите маску субдомена (например, sub): " SUB_MASK
+# --- 2. Ввод данных ---
+echo "--- 2. Сбор параметров ---"
+read -p "Введите основной домен (domain.com): " MAIN_DOMAIN
+read -p "Введите маску субдоменов (sub): " SUB_MASK
 read -p "Введите количество субдоменов (число): " SUB_COUNT
 
-# Генерация списка субдоменов
 REALITY_DOMAIN="${SUB_MASK}.${MAIN_DOMAIN}"
-declare -a SUBDOMAINS
-for i in $(seq -f "%02g" 1 $SUB_COUNT); do
-    SUBDOMAINS+=("${SUB_MASK}${i}.${MAIN_DOMAIN}")
-done
 
-echo "--- 3. Редактирование конфигов Nginx ---"
+# --- 3. Генерация конфигураций ---
+echo "--- 3. Генерация конфигураций Nginx ---"
 
-# 3.2 Редактирование conf.d/default.conf
-# Заменяем {DOMAIN_REALITY} и {DOMAIN}
+# 3.1 Обработка conf.d/default.conf
 sed -i "s/{DOMAIN_REALITY}/$REALITY_DOMAIN/g" ./conf.d/default.conf
 sed -i "s/{DOMAIN}/$MAIN_DOMAIN/g" ./conf.d/default.conf
 
-# 3.1 & 3.3 Редактирование nginx.conf
-# Сначала заменяем базовые переменные
-sed -i "s/{DOMAIN_REALITY}/$REALITY_DOMAIN/g" ./nginx.conf
-sed -i "s/{DOMAIN_SUB01}/${SUBDOMAINS[0]}/g" ./nginx.conf
+# 3.2 Генерация секции STREAM для nginx.conf
+# Генерируем карту (map)
+MAP_CONTENT="    map \$ssl_preread_server_name \$backend_dispatcher {\n"
+MAP_CONTENT+="        ${REALITY_DOMAIN}    tcp_to_xray_01;\n"
 
-# Подготовка блоков для вставки в map и новых upstream
-MAP_ENTRIES=""
-UPSTREAM_BLOCKS=""
+# Генерируем апстримы (upstreams)
+UPSTREAMS="    upstream tcp_to_xray_01 {\n        server unix:/dev/shm/tcp_01.socket;\n    }\n"
 
-# Начинаем с 2-го субдомена (индекс 1), так как первый уже прописан в шаблоне как {DOMAIN_SUB01}
-# Но так как в ТЗ "nginx.conf стало" требует tcp_to_xray_03 для sub02, пройдем циклом:
-for i in $(seq 2 $SUB_COUNT); do
-    IDX_STR=$(printf "%02d" $i)
-    XRAY_IDX=$(printf "%02d" $((i + 1)))
-    SUB_NAME="${SUB_MASK}${IDX_STR}.${MAIN_DOMAIN}"
+for i in $(seq 1 $SUB_COUNT); do
+    IDX=$(printf "%02d" $i)
+    UP_IDX=$(printf "%02d" $((i + 1)))
+    SUB_FULL="${SUB_MASK}${IDX}.${MAIN_DOMAIN}"
     
-    MAP_ENTRIES+="\t\t${SUB_NAME} tcp_to_xray_${XRAY_IDX};\n"
-    UPSTREAM_BLOCKS+="\tupstream tcp_to_xray_${XRAY_IDX} {\n\t\tserver unix:/dev/shm/tcp_${IDX_STR}.socket;\n\t}\n"
+    MAP_CONTENT+="        ${SUB_FULL} tcp_to_xray_${UP_IDX};\n"
+    UPSTREAMS+="    upstream tcp_to_xray_${UP_IDX} {\n        server unix:/dev/shm/tcp_${IDX}.socket;\n    }\n"
 done
 
-# Вставка дополнительных записей в секцию map (после строки с tcp_to_xray_02)
-sed -i "/tcp_to_xray_02;/a ${MAP_ENTRIES}" ./nginx.conf
+MAP_CONTENT+="        default nginx_internal_http;\n    }"
 
-# Добавление новых upstream блоков в конец секции stream (перед закрывающей скобкой http или в конец)
-# Для надежности вставим перед блоком "upstream nginx_internal_http"
-sed -i "/upstream nginx_internal_http/i ${UPSTREAM_BLOCKS}" ./nginx.conf
+# Собираем nginx.conf целиком (используя Heredoc)
+cat <<EOF > ./nginx.conf
+user  nginx;
+worker_processes  auto;
+worker_rlimit_nofile 10000;
+error_log  /var/log/nginx/error.log notice;
+pid        /run/nginx.pid;
 
+events {
+    worker_connections  4096;
+    use epoll;
+    multi_accept on;
+}
 
-echo "--- 4. Автоматизация DNS Cloudflare ---"
-read -p "Введите Cloudflare API Token: " CF_TOKEN
-read -p "Введите Cloudflare Zone ID: " CF_ZONE_ID
+stream {
+    tcp_nodelay on;
+$(echo -e "$MAP_CONTENT")
 
-SERVER_IP=$(curl -s https://api.ipify.org)
-echo "Текущий IP сервера: $SERVER_IP"
+$(echo -e "$UPSTREAMS")
+    upstream nginx_internal_http {
+        server 127.0.0.1:8443;
+    }
 
-# Функция для создания A-записи
-create_dns_record() {
+    server {
+        listen 443 fastopen=256;
+        ssl_preread on;
+        proxy_connect_timeout 5s;
+        proxy_timeout 1h;
+        proxy_pass \$backend_dispatcher;
+    }
+}
+
+http {
+    include       /etc/nginx/mime.types;
+    default_type  application/octet-stream;
+
+    log_format  main  '\$remote_addr - \$remote_user [\$time_local] "\$request" '
+                      '\$status \$body_bytes_sent "\$http_referer" '
+                      '"\$http_user_agent" "\$http_x_forwarded_for"';
+                      
+    access_log  /var/log/nginx/access.log  main;
+
+    sendfile on;
+    tcp_nopush on;
+    tcp_nodelay on;
+    keepalive_timeout 65;
+    types_hash_max_size 2048;
+    server_tokens off;
+
+    gzip on;
+    gzip_types text/plain text/css text/xml text/javascript application/json application/javascript;
+
+    include /etc/nginx/conf.d/*.conf;
+}
+EOF
+
+# --- 4. Cloudflare API ---
+echo "--- 4. Настройка DNS Cloudflare ---"
+read -p "Cloudflare API Token: " CF_TOKEN
+read -p "Cloudflare Zone ID: " CF_ZONE_ID
+
+CURRENT_IP=$(curl -s https://api.ipify.org)
+
+create_record() {
     local name=$1
     curl -s -X POST "https://api.cloudflare.com/client/v4/zones/$CF_ZONE_ID/dns_records" \
          -H "Authorization: Bearer $CF_TOKEN" \
          -H "Content-Type: application/json" \
-         --data "{\"type\":\"A\",\"name\":\"$name\",\"content\":\"$SERVER_IP\",\"ttl\":120,\"proxied\":false}" | jq -r '.success'
+         --data "{\"type\":\"A\",\"name\":\"$name\",\"content\":\"$CURRENT_IP\",\"ttl\":1,\"proxied\":false}" > /dev/null
+    echo "Запись $name создана."
 }
 
-echo "Создание записи для Reality: $REALITY_DOMAIN"
-create_dns_record "$REALITY_DOMAIN"
-
-for sub in "${SUBDOMAINS[@]}"; do
-    echo "Создание записи для субдомена: $sub"
-    create_dns_record "$sub"
+create_record "$REALITY_DOMAIN"
+for i in $(seq 1 $SUB_COUNT); do
+    IDX=$(printf "%02d" $i)
+    create_record "${SUB_MASK}${IDX}.${MAIN_DOMAIN}"
 done
 
-echo "--- 5. Генерация самоподписанного сертификата ---"
+# --- 5. SSL и запуск ---
+echo "--- 5. Генерация сертификата и запуск ---"
 mkdir -p ./certs
-touch ./certs/private.key && touch ./certs/fullchain.crt
-
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "./certs/private.key" \
     -out "./certs/fullchain.crt" \
     -subj "/C=US/ST=State/L=City/O=Organization/CN=$REALITY_DOMAIN"
 
-echo "--- 6. Запуск Docker ---"
 docker compose down || true
 docker compose up -d
 docker compose logs -f
