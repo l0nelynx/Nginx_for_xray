@@ -2,8 +2,7 @@
 
 set -e
 
-# --- 1. Подготовка директории и GitHub ---
-echo "--- 1. Синхронизация репозитория ---"
+echo "--- 1. Repo Sync ---"
 TARGET_DIR="/opt/nginx"
 REPO_URL="https://github.com/l0nelynx/Nginx_for_xray.git"
 
@@ -18,32 +17,29 @@ fi
 git fetch origin
 git reset --hard origin/main
 
-# --- 2. Ввод данных ---
-echo "--- 2. Сбор параметров ---"
-read -p "Введите основной домен (domain.com): " MAIN_DOMAIN
-read -p "Введите маску субдоменов (например, sub): " SUB_MASK
-read -p "Количество субдоменов (например, 3): " SUB_COUNT
+echo "--- 2. Collecting parameters ---"
+read -p "Enter your primary domain (domain.com): " MAIN_DOMAIN
+read -p "Enter subdomain mask (for example, sub): " SUB_MASK
+read -p "Number of subdomains - SUB_COUNT (for example, 3): " SUB_COUNT
 
 REALITY_DOMAIN="${SUB_MASK}.${MAIN_DOMAIN}"
 
-# --- 3. Генерация конфигураций ---
-echo "--- 3. Сборка nginx.conf и default.conf ---"
+echo "--- 3. nginx.conf & default.conf assembly ---"
 
-# Обработка default.conf
 sed -i "s/{DOMAIN_REALITY}/$REALITY_DOMAIN/g" ./conf.d/default.conf
 sed -i "s/{DOMAIN}/$MAIN_DOMAIN/g" ./conf.d/default.conf
 
-# Формирование секции STREAM
-# Начало MAP
+# STREAM
+# MAP
 MAP_CONTENT="    map \$ssl_preread_server_name \$backend_dispatcher {\n"
 MAP_CONTENT+="        ${REALITY_DOMAIN}    tcp_to_xray_01;\n"
 
-# Начало UPSTREAMS (Reality занимает tcp_01)
+# UPSTREAMS (Reality in tcp_01)
 UPSTREAMS="    upstream tcp_to_xray_01 {\n        server unix:/dev/shm/tcp_01.socket;\n    }\n"
 
 for i in $(seq 1 $SUB_COUNT); do
-    SUB_IDX=$(printf "%02d" $i)           # 01, 02... для имени субдомена
-    TARGET_IDX=$(printf "%02d" $((i + 1))) # 02, 03... для апстрима и сокета
+    SUB_IDX=$(printf "%02d" $i)           # 01, 02... for subdomain name
+    TARGET_IDX=$(printf "%02d" $((i + 1))) # 02, 03... for upstream and socket
     SUB_FULL="${SUB_MASK}${SUB_IDX}.${MAIN_DOMAIN}"
     
     MAP_CONTENT+="        ${SUB_FULL} tcp_to_xray_${TARGET_IDX};\n"
@@ -52,7 +48,7 @@ done
 
 MAP_CONTENT+="        default nginx_internal_http;\n    }"
 
-# Запись в nginx.conf
+# Write in nginx.conf
 cat <<EOF > ./nginx.conf
 user  nginx;
 worker_processes  auto;
@@ -102,7 +98,7 @@ http {
 EOF
 
 # --- 4. Cloudflare DNS ---
-echo "--- 4. Настройка Cloudflare ---"
+echo "--- 4. Setting up Cloudflare ---"
 read -p "Cloudflare API Token: " CF_TOKEN
 read -p "Cloudflare Zone ID: " CF_ZONE_ID
 
@@ -123,8 +119,8 @@ for i in $(seq 1 $SUB_COUNT); do
     create_dns "${SUB_MASK}${SUB_IDX}.${MAIN_DOMAIN}"
 done
 
-# --- 5. SSL и запуск ---
-echo "--- 5. SSL и запуск Docker ---"
+# --- 5. SSL & start ---
+echo "--- 5. SSL & start Docker Compose ---"
 mkdir -p ./certs
 openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
     -keyout "./certs/private.key" \
