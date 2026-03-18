@@ -4,7 +4,6 @@ services:
     container_name: nginx
     restart: unless-stopped
     ports:
-      - "80:80"
       - "443:443/tcp"
       - "443:443/udp"
     volumes:
@@ -15,6 +14,11 @@ services:
       - /dev/shm/:/dev/shm/
     env_file:
       - .env
+    logging:
+          driver: "json-file"
+          options:
+            max-size: "10m"
+            max-file: "3"
     ulimits:
       nofile:
         soft: 1048576
